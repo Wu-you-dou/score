@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>学生会积分考勤系统（实时同步版）</title>
+    <title>学生会积分考勤（多人实时同步）</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
         body{background:#f4f7fa;padding:15px}
@@ -24,7 +24,7 @@
 <body>
 
 <div class="container">
-    <h2>学生会积分考勤系统（实时同步）</h2>
+    <h2>学生会积分考勤（多人实时同步）</h2>
 
     <div class="box">
         预警分数：<span id="warn">60</span> 分
@@ -49,33 +49,21 @@
     </table>
 
     <div class="record">
-        <h3>积分记录</h3>
+        <h3>积分操作记录</h3>
         <div id="record"></div>
     </div>
 </div>
 
-<!-- Firebase 云端数据库（免费） -->
-<script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-    // 管理员密码
     const PWD = "123456";
     const WARN_SCORE = 60;
 
-    // 云端数据库配置（我给你建好的免费公共库）
-    const firebaseConfig = {
-        apiKey: "AIzaSyA1U0GkE1RgB5X8lL7XqJnG0gH4ZkL4X7Q",
-        authDomain: "student-score-999.firebaseapp.com",
-        projectId: "student-score-999",
-        storageBucket: "student-score-999.appspot.com",
-        messagingSenderId: "1234567890",
-        appId: "1:1234567890:web:abcdef123456"
-    };
+    // 你的项目配置（我已全部填好）
+    const SUPABASE_URL = "https://jzvxybihnzamevvrpjaqb.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_Dfo03V1KCb8R1WOb4du_uA_9sxwB5uG";
 
-    // 初始化 Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+    const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // 登录
     function login() {
@@ -83,39 +71,23 @@
         if (p === PWD) {
             document.getElementById("admin").style.display = "block";
             alert("登录成功！");
-        } else {
-            alert("密码错误！");
-        }
+        } else alert("密码错误！");
     }
 
-    // 加载云端所有数据
+    // 加载云端数据
     async function loadData() {
-        let memberSnap = await db.collection("members").orderBy("score", "desc").get();
-        let recordSnap = await db.collection("records").orderBy("time", "desc").get();
-
-        let members = [];
-        memberSnap.forEach(doc => {
-            members.push(doc.data());
-        });
-
-        let records = [];
-        recordSnap.forEach(doc => {
-            records.push(doc.data());
-        });
-
-        render(members, records);
+        let { data: members } = await supabase.from("members").select("*").order("score", { ascending: false });
+        let { data: records } = await supabase.from("records").select("*").order("time", { ascending: false });
+        render(members || [], records || []);
     }
 
     // 添加成员
     async function addMember() {
         let dept = document.getElementById("dept").value.trim();
         let name = document.getElementById("name").value.trim();
-        if (!dept || !name) return alert("请填写完整！");
+        if (!dept || !name) return alert("请填写完整");
 
-        await db.collection("members").doc(name).set({
-            dept, name, score: 100
-        });
-
+        await supabase.from("members").insert([{ dept, name, score: 100 }]);
         document.getElementById("dept").value = "";
         document.getElementById("name").value = "";
         alert("添加成功！");
@@ -127,24 +99,19 @@
         let fname = document.getElementById("fname").value.trim();
         let score = parseInt(document.getElementById("score").value);
         let note = document.getElementById("note").value.trim();
+        if (!fname || isNaN(score) || !note) return alert("请填写完整");
 
-        if (!fname || !score || !note) return alert("请填写完整！");
+        let { data: user } = await supabase.from("members").select("*").eq("name", fname).single();
+        if (!user) return alert("未找到成员");
 
-        let doc = await db.collection("members").doc(fname).get();
-        if (!doc.exists) return alert("未找到该成员！");
-
-        let oldScore = doc.data().score;
-        let newScore = oldScore + score;
-
-        await db.collection("members").doc(fname).update({ score: newScore });
-
-        await db.collection("records").add({
+        await supabase.from("members").update({ score: user.score + score }).eq("name", fname);
+        await supabase.from("records").insert([{
             time: new Date().toLocaleString(),
             name: fname,
-            dept: doc.data().dept,
+            dept: user.dept,
             score: score > 0 ? "+" + score : score,
             note: note
-        });
+        }]);
 
         document.getElementById("fname").value = "";
         document.getElementById("score").value = "";
@@ -169,8 +136,7 @@
         document.getElementById("record").innerHTML = rhtml;
     }
 
-    // 自动加载
-    window.onload = loadData;
+    window.onload = () => { loadData(); setInterval(loadData, 5000); };
 </script>
 </body>
 </html>
