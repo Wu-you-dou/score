@@ -1,9 +1,157 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生会积分考勤</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
+        body{background:#f4f7fa;padding:15px}
+        .container{max-width:100%;background:white;padding:15px;border-radius:12px}
+        h2{text-align:center;margin-bottom:15px}
+        .box{background:#f0f4f8;padding:12px;border-radius:8px;margin-bottom:15px}
+        input{padding:8px;margin:4px;width:90%;border:1px solid #ddd;border-radius:6px}
+        button{padding:8px 12px;background:#2F4056;color:white;border:none;border-radius:6px;margin:4px;cursor:pointer}
+        table{width:100%;border-collapse:collapse;margin-top:15px}
+        th,td{border:1px solid #ddd;padding:8px;text-align:center}
+        th{background:#2F4056;color:white}
+        .low{color:red;background:#ffeef0}
+        .admin{display:none;background:#eef6ff}
+        .record{margin-top:20px}
+        .item{padding:6px;border-bottom:1px solid #eee;font-size:14px}
+    </style>
+</head>
 <body>
-    <button onclick="alert('能点了！')">测试按钮</button>
-    <script>
-        // 空的，啥也不加载
-    </script>
+
+<div class="container">
+    <h2>学生会积分考勤（多人实时同步）</h2>
+
+    <div class="box">
+        预警分数：<span id="warn">60</span> 分
+        <button id="loginBtn">管理员登录</button>
+        <button id="refreshBtn">刷新数据</button>
+    </div>
+
+    <div class="box admin" id="admin">
+        部门：<input id="dept" placeholder="部门"><br>
+        姓名：<input id="name" placeholder="姓名"><br>
+        <button id="addBtn">添加成员</button><br><br>
+
+        成员姓名：<input id="fname" placeholder="输入姓名"><br>
+        积分变化：<input id="score" placeholder="+5 -3"><br>
+        原因：<input id="note" placeholder="备注"><br>
+        <button id="scoreBtn">确认加减分</button>
+    </div>
+
+    <table>
+        <tr><th>排名</th><th>部门</th><th>姓名</th><th>积分</th></tr>
+        <tbody id="list"></tbody>
+    </table>
+
+    <div class="record">
+        <h3>积分操作记录</h3>
+        <div id="record"></div>
+    </div>
+</div>
+
+<!-- 先加载库，再写代码，避免顺序错 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+    const PWD = "123456";
+    const WARN_SCORE = 60;
+
+    const SUPABASE_URL = "https://jzvxybihnzamevvrpjaqb.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_Dfo03V1KCb8R1WOb4du_uA_9sxwB5uG";
+
+    // 关键：不跟库变量重名
+    const dbClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // 所有函数放全局，不报错
+    function login() {
+        let p = prompt("请输入管理员密码：");
+        if (p === PWD) {
+            document.getElementById("admin").style.display = "block";
+            alert("登录成功！");
+        } else {
+            alert("密码错误！");
+        }
+    }
+
+    async function loadData() {
+        try {
+            let { data: members } = await dbClient.from("members").select("*").order("score", { ascending: false });
+            let { data: records } = await dbClient.from("records").select("*").order("time", { ascending: false });
+            render(members || [], records || []);
+        } catch (err) {
+            console.error("加载失败：", err);
+        }
+    }
+
+    async function addMember() {
+        let dept = document.getElementById("dept").value.trim();
+        let name = document.getElementById("name").value.trim();
+        if (!dept || !name) return alert("请填写完整");
+        try {
+            await dbClient.from("members").insert([{ dept, name, score: 100 }]);
+            document.getElementById("dept").value = "";
+            document.getElementById("name").value = "";
+            alert("添加成功！");
+            loadData();
+        } catch (err) {
+            console.error("添加失败：", err);
+        }
+    }
+
+    async function doScore() {
+        let fname = document.getElementById("fname").value.trim();
+        let score = parseInt(document.getElementById("score").value);
+        let note = document.getElementById("note").value.trim();
+        if (!fname || isNaN(score) || !note) return alert("请填写完整");
+        try {
+            let { data: user } = await dbClient.from("members").select("*").eq("name", fname).single();
+            if (!user) return alert("未找到成员");
+            await dbClient.from("members").update({ score: user.score + score }).eq("name", fname);
+            await dbClient.from("records").insert([{
+                time: new Date().toLocaleString(),
+                name: fname,
+                dept: user.dept,
+                score: score > 0 ? "+" + score : score,
+                note: note
+            }]);
+            document.getElementById("fname").value = "";
+            document.getElementById("score").value = "";
+            document.getElementById("note").value = "";
+            alert("操作成功！");
+            loadData();
+        } catch (err) {
+            console.error("操作失败：", err);
+        }
+    }
+
+    function render(members, records) {
+        let html = "";
+        members.forEach((u, i) => {
+            let c = u.score < WARN_SCORE ? "low" : "";
+            html += `<tr class="${c}"><td>${i+1}</td><td>${u.dept}</td><td>${u.name}</td><td>${u.score}</td></tr>`;
+        });
+        document.getElementById("list").innerHTML = html;
+
+        let rhtml = "";
+        records.forEach(r => {
+            rhtml += `<div class="item">${r.time} | ${r.name} ${r.score}分 | ${r.note}</div>`;
+        });
+        document.getElementById("record").innerHTML = rhtml;
+    }
+
+    // 用 addEventListener，比 onclick 更稳
+    window.onload = function() {
+        document.getElementById("loginBtn").addEventListener("click", login);
+        document.getElementById("refreshBtn").addEventListener("click", loadData);
+        document.getElementById("addBtn").addEventListener("click", addMember);
+        document.getElementById("scoreBtn").addEventListener("click", doScore);
+        loadData();
+        setInterval(loadData, 5000);
+    };
+</script>
 </body>
 </html>
