@@ -6,16 +6,17 @@
     <title>学生会积分考勤系统</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
-        body{background:#f4f7fa;padding:15px}
-        .container{max-width:100%;background:#fff;padding:15px;border-radius:12px}
-        h2{text-align:center;margin-bottom:15px}
+        body{background:#f4f8ff;padding:15px}
+        .container{max-width:100%;background:#fff;padding:18px;border-radius:12px}
+        h2{text-align:center;margin-bottom:15px;color:#2F4056}
         .box{background:#f0f4f8;padding:12px;border-radius:8px;margin-bottom:15px}
-        input{padding:8px;margin:4px;width:90%;border:1px solid #ddd;border-radius:6px}
+        input,select{padding:8px;margin:4px;width:90%;border:1px solid #ddd;border-radius:6px}
         button{padding:8px 12px;background:#2F4056;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer}
         table{width:100%;border-collapse:collapse;margin-top:15px}
         th,td{border:1px solid #ddd;padding:8px;text-align:center}
         th{background:#2F4056;color:white}
-        .low{color:red;background:#ffeef0}
+        .boy{color:#0066cc}
+        .girl{color:#ff4488}
         .admin{display:none;background:#eef6ff}
         .item{padding:6px;border-bottom:1px solid #eee;font-size:14px}
     </style>
@@ -26,42 +27,45 @@
     <h2>学生会积分考勤系统</h2>
 
     <div class="box">
-        预警分数：<span id="warn">60</span> 分
         <button id="loginBtn">管理员登录</button>
         <button id="refreshBtn">刷新数据</button>
     </div>
 
     <div class="box admin" id="adminPanel">
-        部门：<input id="dept" placeholder="部门"><br>
-        姓名：<input id="name" placeholder="姓名"><br>
+        班级：<input id="classInfo" placeholder="例如：高一1班" ><br>
+        姓名：<input id="name" placeholder="姓名" ><br>
+        性别：
+        <select id="gender">
+            <option value="男">男</option>
+            <option value="女">女</option>
+        </select><br>
         <button id="addBtn">添加成员</button><br><br>
 
-        成员姓名：<input id="fname" placeholder="输入姓名"><br>
-        积分变化：<input id="score" placeholder="+5 -3"><br>
-        原因：<input id="note" placeholder="备注"><br>
-        <button id="doScoreBtn">确认加减分</button>
+        姓名：<input id="fname" placeholder="输入要加分/减分的姓名" ><br>
+        积分变化：<input id="score" placeholder="例如：+5 或 -3" ><br>
+        原因：<input id="note" placeholder="备注" ><br>
+        <button id="doScoreBtn">确认操作</button>
     </div>
 
     <table>
-        <tr><th>排名</th><th>部门</th><th>姓名</th><th>积分</th></tr>
+        <tr><th>排名</th><th>班级</th><th>姓名</th><th>性别</th><th>积分</th></tr>
         <tbody id="list"></tbody>
     </table>
 
-    <h3 style="margin:15px 0 10px">积分操作记录</h3>
+    <h3 style="margin:15px 0 10px">操作记录</h3>
     <div id="record"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const PWD = "123456";
-const WARN = 60;
 
 const supabaseUrl = "https://jzvxybihnzamevvrpjaqb.supabase.co";
 const supabaseKey = "sb_publishable_Dfo03V1KCb8R1WOb4du_uA_9sxwB5uG";
 const client = supabase.createClient(supabaseUrl, supabaseKey);
 
 function login() {
-    let p = prompt("请输入密码：");
+    let p = prompt("请输入管理员密码：");
     if (p === PWD) {
         document.getElementById("adminPanel").style.display = "block";
         alert("登录成功");
@@ -77,11 +81,17 @@ async function load() {
 }
 
 async function addMember() {
-    let dept = document.getElementById("dept").value.trim();
+    let classInfo = document.getElementById("classInfo").value.trim();
     let name = document.getElementById("name").value.trim();
-    if (!dept || !name) return alert("请填写完整");
-    await client.from("members").insert([{ dept, name, score: 100 }]);
-    document.getElementById("dept").value = "";
+    let gender = document.getElementById("gender").value;
+    
+    if (!classInfo || !name) return alert("请填写完整");
+    
+    await client.from("members").insert([{ 
+        classInfo, name, gender, score: 100 
+    }]);
+
+    document.getElementById("classInfo").value = "";
     document.getElementById("name").value = "";
     alert("添加成功");
     load();
@@ -91,6 +101,7 @@ async function doScore() {
     let fname = document.getElementById("fname").value.trim();
     let score = parseInt(document.getElementById("score").value);
     let note = document.getElementById("note").value.trim();
+    
     if (!fname || isNaN(score) || !note) return alert("请填写完整");
 
     let { data: user } = await client.from("members").select("*").eq("name", fname).single();
@@ -100,9 +111,10 @@ async function doScore() {
     await client.from("records").insert([{
         time: new Date().toLocaleString(),
         name: fname,
-        dept: user.dept,
-        score: score > 0 ? "+" + score : score,
-        note: note
+        classInfo: user.classInfo,
+        gender: user.gender,
+        score: score > 0 ? "+"+score : score,
+        note
     }]);
 
     document.getElementById("fname").value = "";
@@ -115,8 +127,14 @@ async function doScore() {
 function render(members, records) {
     let html = "";
     members.forEach((u, i) => {
-        let cls = u.score < WARN ? "low" : "";
-        html += `<tr class="${cls}"><td>${i+1}</td><td>${u.dept}</td><td>${u.name}</td><td>${u.score}</td></tr>`;
+        let genderColor = u.gender === "男" ? "boy" : "girl";
+        html += `<tr>
+            <td>${i+1}</td>
+            <td>${u.classInfo}</td>
+            <td>${u.name}</td>
+            <td class="${genderColor}">${u.gender}</td>
+            <td>${u.score}</td>
+        </tr>`;
     });
     document.getElementById("list").innerHTML = html;
 
