@@ -11,7 +11,7 @@
         h2{text-align:center;margin-bottom:15px}
         .box{background:#f0f4f8;padding:12px;border-radius:8px;margin-bottom:15px}
         input{padding:8px;margin:4px;width:90%;border:1px solid #ddd;border-radius:6px}
-        button{padding:8px 12px;background:#2F4056;color:white;border:none;border-radius:6px;margin:4px}
+        button{padding:8px 12px;background:#2F4056;color:white;border:none;border-radius:6px;margin:4px;cursor:pointer}
         table{width:100%;border-collapse:collapse;margin-top:15px}
         th,td{border:1px solid #ddd;padding:8px;text-align:center}
         th{background:#2F4056;color:white}
@@ -54,16 +54,18 @@
     </div>
 </div>
 
+<!-- 正确引入 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
     const PWD = "123456";
     const WARN_SCORE = 60;
 
-    // 你的项目配置（我已全部填好）
+    // 你的项目配置
     const SUPABASE_URL = "https://jzvxybihnzamevvrpjaqb.supabase.co";
     const SUPABASE_KEY = "sb_publishable_Dfo03V1KCb8R1WOb4du_uA_9sxwB5uG";
 
-    const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // 修复：用 window.supabase.createClient，避免重复声明
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // 登录
     function login() {
@@ -71,27 +73,39 @@
         if (p === PWD) {
             document.getElementById("admin").style.display = "block";
             alert("登录成功！");
-        } else alert("密码错误！");
+        } else {
+            alert("密码错误！");
+        }
     }
 
     // 加载云端数据
     async function loadData() {
-        let { data: members } = await supabase.from("members").select("*").order("score", { ascending: false });
-        let { data: records } = await supabase.from("records").select("*").order("time", { ascending: false });
-        render(members || [], records || []);
+        try {
+            let { data: members } = await db.from("members").select("*").order("score", { ascending: false });
+            let { data: records } = await db.from("records").select("*").order("time", { ascending: false });
+            render(members || [], records || []);
+        } catch (err) {
+            console.error("加载失败：", err);
+            alert("数据加载失败，请检查网络");
+        }
     }
 
     // 添加成员
     async function addMember() {
         let dept = document.getElementById("dept").value.trim();
         let name = document.getElementById("name").value.trim();
-        if (!dept || !name) return alert("请填写完整");
+        if (!dept || !name) return alert("请填写完整部门和姓名");
 
-        await supabase.from("members").insert([{ dept, name, score: 100 }]);
-        document.getElementById("dept").value = "";
-        document.getElementById("name").value = "";
-        alert("添加成功！");
-        loadData();
+        try {
+            await db.from("members").insert([{ dept, name, score: 100 }]);
+            document.getElementById("dept").value = "";
+            document.getElementById("name").value = "";
+            alert("添加成功！");
+            loadData();
+        } catch (err) {
+            console.error("添加失败：", err);
+            alert("添加失败：" + err.message);
+        }
     }
 
     // 加减分
@@ -99,25 +113,30 @@
         let fname = document.getElementById("fname").value.trim();
         let score = parseInt(document.getElementById("score").value);
         let note = document.getElementById("note").value.trim();
-        if (!fname || isNaN(score) || !note) return alert("请填写完整");
+        if (!fname || isNaN(score) || !note) return alert("请填写完整姓名、分数和备注");
 
-        let { data: user } = await supabase.from("members").select("*").eq("name", fname).single();
-        if (!user) return alert("未找到成员");
+        try {
+            let { data: user } = await db.from("members").select("*").eq("name", fname).single();
+            if (!user) return alert("未找到该成员");
 
-        await supabase.from("members").update({ score: user.score + score }).eq("name", fname);
-        await supabase.from("records").insert([{
-            time: new Date().toLocaleString(),
-            name: fname,
-            dept: user.dept,
-            score: score > 0 ? "+" + score : score,
-            note: note
-        }]);
+            await db.from("members").update({ score: user.score + score }).eq("name", fname);
+            await db.from("records").insert([{
+                time: new Date().toLocaleString(),
+                name: fname,
+                dept: user.dept,
+                score: score > 0 ? "+" + score : score,
+                note: note
+            }]);
 
-        document.getElementById("fname").value = "";
-        document.getElementById("score").value = "";
-        document.getElementById("note").value = "";
-        alert("操作成功！");
-        loadData();
+            document.getElementById("fname").value = "";
+            document.getElementById("score").value = "";
+            document.getElementById("note").value = "";
+            alert("操作成功！");
+            loadData();
+        } catch (err) {
+            console.error("操作失败：", err);
+            alert("操作失败：" + err.message);
+        }
     }
 
     // 渲染页面
@@ -136,7 +155,10 @@
         document.getElementById("record").innerHTML = rhtml;
     }
 
-    window.onload = () => { loadData(); setInterval(loadData, 5000); };
+    window.onload = () => { 
+        loadData(); 
+        setInterval(loadData, 5000); 
+    };
 </script>
 </body>
 </html>
