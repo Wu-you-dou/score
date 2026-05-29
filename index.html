@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>学生会积分考勤系统</title>
+    <title>学生会积分考勤（共享版）</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
-        body{background:#f4f8ff;padding:15px}
+        body{background:#f8f9fa;padding:15px}
         .container{max-width:100%;background:#fff;padding:18px;border-radius:12px}
         h2{text-align:center;margin-bottom:15px;color:#2F4056}
-        .box{background:#f0f4f8;padding:12px;border-radius:8px;margin-bottom:15px}
+        .box{background:#f1f3f5;padding:12px;border-radius:8px;margin-bottom:15px}
         input,select{padding:8px;margin:4px;width:90%;border:1px solid #ddd;border-radius:6px}
         button{padding:8px 12px;background:#2F4056;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer}
         table{width:100%;border-collapse:collapse;margin-top:15px}
@@ -24,7 +24,7 @@
 <body>
 
 <div class="container">
-    <h2>学生会积分考勤系统</h2>
+    <h2>学生会积分考勤（共享版）</h2>
 
     <div class="box">
         <button id="loginBtn">管理员登录</button>
@@ -32,8 +32,8 @@
     </div>
 
     <div class="box admin" id="adminPanel">
-        班级：<input id="classInfo" placeholder="例如：高一1班" ><br>
-        姓名：<input id="name" placeholder="姓名" ><br>
+        班级：<input id="classInfo" placeholder="例如：高一1班"><br>
+        姓名：<input id="name" placeholder="姓名"><br>
         性别：
         <select id="gender">
             <option value="男">男</option>
@@ -41,9 +41,9 @@
         </select><br>
         <button id="addBtn">添加成员</button><br><br>
 
-        姓名：<input id="fname" placeholder="输入要加分/减分的姓名" ><br>
-        积分变化：<input id="score" placeholder="例如：+5 或 -3" ><br>
-        原因：<input id="note" placeholder="备注" ><br>
+        姓名：<input id="fname" placeholder="输入姓名"><br>
+        积分变化：<input id="score" placeholder="+5 或 -3"><br>
+        原因：<input id="note" placeholder="备注"><br>
         <button id="doScoreBtn">确认操作</button>
     </div>
 
@@ -56,40 +56,39 @@
     <div id="record"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const PWD = "123456";
-
-const supabaseUrl = "https://jzvxybihnzamevvrpjaqb.supabase.co";
-const supabaseKey = "sb_publishable_Dfo03V1KCb8R1WOb4du_uA_9sxwB5uG";
-const client = supabase.createClient(supabaseUrl, supabaseKey);
+const PWD = "135246";
+const API = "https://share.db.icons8.workers.dev";
 
 function login() {
-    let p = prompt("请输入管理员密码：");
-    if (p === PWD) {
+    let p = prompt("密码：");
+    if(p === PWD){
         document.getElementById("adminPanel").style.display = "block";
         alert("登录成功");
-    } else {
+    }else{
         alert("密码错误");
     }
 }
 
 async function load() {
-    let { data: members } = await client.from("members").select("*").order("score", { ascending: false });
-    let { data: records } = await client.from("records").select("*").order("time", { ascending: false });
-    render(members || [], records || []);
+    let res = await fetch(API+"/score");
+    let data = await res.json();
+    let members = data.members || [];
+    let records = data.records || [];
+    members.sort((a,b)=>b.score-a.score);
+    render(members, records);
 }
 
 async function addMember() {
     let classInfo = document.getElementById("classInfo").value.trim();
     let name = document.getElementById("name").value.trim();
     let gender = document.getElementById("gender").value;
-    
-    if (!classInfo || !name) return alert("请填写完整");
-    
-    await client.from("members").insert([{ 
-        classInfo, name, gender, score: 100 
-    }]);
+    if(!classInfo || !name) return alert("请填写完整");
+
+    await fetch(API+"/score/add", {
+        method: "POST",
+        body: JSON.stringify({ classInfo, name, gender, score:100 })
+    });
 
     document.getElementById("classInfo").value = "";
     document.getElementById("name").value = "";
@@ -101,21 +100,12 @@ async function doScore() {
     let fname = document.getElementById("fname").value.trim();
     let score = parseInt(document.getElementById("score").value);
     let note = document.getElementById("note").value.trim();
-    
-    if (!fname || isNaN(score) || !note) return alert("请填写完整");
+    if(!fname || isNaN(score) || !note) return alert("请填写完整");
 
-    let { data: user } = await client.from("members").select("*").eq("name", fname).single();
-    if (!user) return alert("未找到成员");
-
-    await client.from("members").update({ score: user.score + score }).eq("name", fname);
-    await client.from("records").insert([{
-        time: new Date().toLocaleString(),
-        name: fname,
-        classInfo: user.classInfo,
-        gender: user.gender,
-        score: score > 0 ? "+"+score : score,
-        note
-    }]);
+    await fetch(API+"/score/score", {
+        method: "POST",
+        body: JSON.stringify({ name:fname, score, note })
+    });
 
     document.getElementById("fname").value = "";
     document.getElementById("score").value = "";
@@ -126,31 +116,32 @@ async function doScore() {
 
 function render(members, records) {
     let html = "";
-    members.forEach((u, i) => {
-        let genderColor = u.gender === "男" ? "boy" : "girl";
+    members.forEach((u,i)=>{
+        let gc = u.gender === "男" ? "boy" : "girl";
         html += `<tr>
             <td>${i+1}</td>
             <td>${u.classInfo}</td>
             <td>${u.name}</td>
-            <td class="${genderColor}">${u.gender}</td>
+            <td class="${gc}">${u.gender}</td>
             <td>${u.score}</td>
         </tr>`;
     });
     document.getElementById("list").innerHTML = html;
 
     let rhtml = "";
-    records.forEach(r => {
-        rhtml += `<div class="item">${r.time} | ${r.name} ${r.score}分 | ${r.note}</div>`;
+    records.forEach(r=>{
+        rhtml += `<div class="item">${r.time}｜${r.name} ${r.score}分｜${r.note}</div>`;
     });
     document.getElementById("record").innerHTML = rhtml;
 }
 
-window.onload = function () {
+window.onload = function(){
     document.getElementById("loginBtn").onclick = login;
     document.getElementById("refreshBtn").onclick = load;
     document.getElementById("addBtn").onclick = addMember;
     document.getElementById("doScoreBtn").onclick = doScore;
     load();
+    setInterval(load, 5000);
 };
 </script>
 </body>
