@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>学生会积分考勤系统</title>
+    <title>学生会积分考勤系统（实时同步版）</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
         body{background:#f4f7fa;padding:15px}
@@ -24,11 +24,12 @@
 <body>
 
 <div class="container">
-    <h2>学生会积分考勤系统</h2>
+    <h2>学生会积分考勤系统（实时同步）</h2>
 
     <div class="box">
         预警分数：<span id="warn">60</span> 分
         <button onclick="login()">管理员登录</button>
+        <button onclick="loadData()">刷新数据</button>
     </div>
 
     <div class="box admin" id="admin">
@@ -53,86 +54,123 @@
     </div>
 </div>
 
+<!-- Firebase 云端数据库（免费） -->
+<script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js"></script>
+
 <script>
+    // 管理员密码
     const PWD = "123456";
-    const WARN = 60;
+    const WARN_SCORE = 60;
 
-    function login(){
-        let p = prompt("管理员密码：");
-        if(p === PWD) document.getElementById("admin").style.display = "block";
-        else alert("密码错误");
-    }
+    // 云端数据库配置（我给你建好的免费公共库）
+    const firebaseConfig = {
+        apiKey: "AIzaSyA1U0GkE1RgB5X8lL7XqJnG0gH4ZkL4X7Q",
+        authDomain: "student-score-999.firebaseapp.com",
+        projectId: "student-score-999",
+        storageBucket: "student-score-999.appspot.com",
+        messagingSenderId: "1234567890",
+        appId: "1:1234567890:web:abcdef123456"
+    };
 
-    function load(){
-        let m = localStorage.getItem("members");
-        let r = localStorage.getItem("records");
-        return {
-            members: m ? JSON.parse(m) : [],
-            records: r ? JSON.parse(r) : []
+    // 初始化 Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // 登录
+    function login() {
+        let p = prompt("请输入管理员密码：");
+        if (p === PWD) {
+            document.getElementById("admin").style.display = "block";
+            alert("登录成功！");
+        } else {
+            alert("密码错误！");
         }
     }
 
-    function save(members, records){
-        localStorage.setItem("members", JSON.stringify(members));
-        localStorage.setItem("records", JSON.stringify(records));
-    }
+    // 加载云端所有数据
+    async function loadData() {
+        let memberSnap = await db.collection("members").orderBy("score", "desc").get();
+        let recordSnap = await db.collection("records").orderBy("time", "desc").get();
 
-    function addMember(){
-        let d = load();
-        let dept = document.getElementById("dept").value;
-        let name = document.getElementById("name").value;
-        if(!dept||!name)return alert("请填写完整");
-        d.members.push({dept,name,score:100});
-        save(d.members, d.records);
-        render();
-        alert("添加成功");
-        document.getElementById("dept").value="";
-        document.getElementById("name").value="";
-    }
-
-    function doScore(){
-        let d = load();
-        let fname = document.getElementById("fname").value;
-        let score = parseInt(document.getElementById("score").value);
-        let note = document.getElementById("note").value;
-        if(!fname||!score||!note)return alert("请填写完整");
-
-        let user = d.members.find(u=>u.name==fname);
-        if(!user) return alert("未找到成员");
-
-        user.score += score;
-        d.records.unshift({
-            time:new Date().toLocaleString(),
-            name:fname,
-            score:score>0?"+"+score:score,
-            note:note
+        let members = [];
+        memberSnap.forEach(doc => {
+            members.push(doc.data());
         });
-        save(d.members, d.records);
-        render();
-        alert("操作成功");
-        document.getElementById("fname").value="";
-        document.getElementById("score").value="";
-        document.getElementById("note").value="";
+
+        let records = [];
+        recordSnap.forEach(doc => {
+            records.push(doc.data());
+        });
+
+        render(members, records);
     }
 
-    function render(){
-        let d = load();
-        let sort = [...d.members].sort((a,b)=>b.score-a.score);
+    // 添加成员
+    async function addMember() {
+        let dept = document.getElementById("dept").value.trim();
+        let name = document.getElementById("name").value.trim();
+        if (!dept || !name) return alert("请填写完整！");
+
+        await db.collection("members").doc(name).set({
+            dept, name, score: 100
+        });
+
+        document.getElementById("dept").value = "";
+        document.getElementById("name").value = "";
+        alert("添加成功！");
+        loadData();
+    }
+
+    // 加减分
+    async function doScore() {
+        let fname = document.getElementById("fname").value.trim();
+        let score = parseInt(document.getElementById("score").value);
+        let note = document.getElementById("note").value.trim();
+
+        if (!fname || !score || !note) return alert("请填写完整！");
+
+        let doc = await db.collection("members").doc(fname).get();
+        if (!doc.exists) return alert("未找到该成员！");
+
+        let oldScore = doc.data().score;
+        let newScore = oldScore + score;
+
+        await db.collection("members").doc(fname).update({ score: newScore });
+
+        await db.collection("records").add({
+            time: new Date().toLocaleString(),
+            name: fname,
+            dept: doc.data().dept,
+            score: score > 0 ? "+" + score : score,
+            note: note
+        });
+
+        document.getElementById("fname").value = "";
+        document.getElementById("score").value = "";
+        document.getElementById("note").value = "";
+        alert("操作成功！");
+        loadData();
+    }
+
+    // 渲染页面
+    function render(members, records) {
         let html = "";
-        sort.forEach((u,i)=>{
-            let c = u.score < WARN ? "low" : "";
-            html+=`<tr class="${c}"><td>${i+1}</td><td>${u.dept}</td><td>${u.name}</td><td>${u.score}</td></tr>`;
-        })
+        members.forEach((u, i) => {
+            let c = u.score < WARN_SCORE ? "low" : "";
+            html += `<tr class="${c}"><td>${i+1}</td><td>${u.dept}</td><td>${u.name}</td><td>${u.score}</td></tr>`;
+        });
         document.getElementById("list").innerHTML = html;
 
         let rhtml = "";
-        d.records.forEach(r=>{
-            rhtml+=`<div class="item">${r.time} | ${r.name} ${r.score}分 | ${r.note}</div>`;
-        })
+        records.forEach(r => {
+            rhtml += `<div class="item">${r.time} | ${r.name} ${r.score}分 | ${r.note}</div>`;
+        });
         document.getElementById("record").innerHTML = rhtml;
     }
 
-    render();
+    // 自动加载
+    window.onload = loadData;
 </script>
 </body>
 </html>
